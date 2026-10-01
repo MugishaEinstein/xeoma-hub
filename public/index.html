@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101817" />
+  <title>Xeoma Hub · Operations console</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail">
+      <div class="brand"><span class="brand-mark">X</span><div><strong>Xeoma</strong><small>HUB / 01</small></div></div>
+      <nav><a class="active" href="#overview"><span>◈</span> Overview</a><a href="#cameras"><span>▦</span> Cameras</a><a href="#servers"><span>⌁</span> Servers</a><a href="#events"><span>◷</span> Events <b>4</b></a></nav>
+      <div class="rail-bottom"><div class="secure-badge"><span class="dot"></span><div><strong>Control plane</strong><small>Private by default</small></div></div><button class="icon-button" title="Settings">⚙</button></div>
+    </aside>
+    <main>
+      <header class="topbar"><div><p class="eyebrow">Operations / Camera network</p><h1>Good evening, boss.</h1></div><div class="top-actions"><span class="demo-chip" id="mode-chip">DEMO MODE</span><button class="avatar">ME</button></div></header>
+      <section class="hero" id="overview"><div><p class="eyebrow lime">LIVE NETWORK SNAPSHOT</p><h2>One view across<br /><em>every site.</em></h2><p class="hero-copy">A calm command center for your Xeoma deployments, so you can spot the signal that matters without switching windows.</p></div><div class="hero-orbit"><div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div><div class="orbit-core"><strong id="camera-count">13</strong><span>cameras<br />indexed</span></div><i class="orbit-dot one"></i><i class="orbit-dot two"></i><i class="orbit-dot three"></i></div></section>
+      <section class="metrics"><div class="metric"><span class="metric-label">Sites online</span><strong id="online-count">2 <small>/ 3</small></strong><span class="metric-note positive">↑ 1 since yesterday</span></div><div class="metric"><span class="metric-label">Active cameras</span><strong id="active-count">10 <small>/ 13</small></strong><span class="metric-note">Across all deployments</span></div><div class="metric"><span class="metric-label">Network latency</span><strong>68 <small>ms</small></strong><span class="metric-note positive">Stable · last 15 min</span></div><div class="metric alert"><span class="metric-label">Needs attention</span><strong id="attention-count">2</strong><span class="metric-note warning">Review before 23:00</span></div></section>
+      <section class="section-head" id="cameras"><div><p class="eyebrow">THE CAMERA WALL</p><h3>What’s happening now</h3></div><div class="view-tools"><button class="filter active" data-filter="all">All <span>7</span></button><button class="filter" data-filter="live">Live <span>4</span></button><button class="filter" data-filter="attention">Attention <span>2</span></button></div></section>
+      <section class="camera-grid" id="camera-grid"></section>
+      <section class="lower-grid" id="servers"><div class="panel"><div class="panel-head"><div><p class="eyebrow">DEPLOYMENTS</p><h3>Xeoma servers</h3></div><button class="text-button">Manage servers ↗</button></div><div id="server-list"></div></div><div class="panel activity-panel" id="events"><div class="panel-head"><div><p class="eyebrow">LAST 30 MINUTES</p><h3>Activity pulse</h3></div><span class="live-label"><i></i> Streaming</span></div><div class="activity-list"><div><span class="activity-icon green">↗</span><p><strong>Motion detected</strong><small>North gate · North Campus</small></p><time>12 sec</time></div><div><span class="activity-icon amber">!</span><p><strong>Latency above baseline</strong><small>Cashier · Retail East</small></p><time>8 min</time></div><div><span class="activity-icon blue">↺</span><p><strong>Server heartbeat</strong><small>Warehouse · sync complete</small></p><time>14 min</time></div><div><span class="activity-icon purple">▣</span><p><strong>Archive export ready</strong><small>Dispatch desk · 22:05–22:15</small></p><time>21 min</time></div></div></div></section>
+      <footer><span>XEOMA HUB <b>0.1.0</b></span><span>Source links open in your Xeoma deployment · No video is stored here</span></footer>
+    </main>
+  </div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
