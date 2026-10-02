@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PUBLIC = join(ROOT, 'public');
-const PORT = Number(process.env.PORT || 4173);
+const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const demoMode = String(process.env.XEOMA_DEMO_MODE ?? 'true').toLowerCase() !== 'false';
 
