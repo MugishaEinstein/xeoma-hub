@@ -1,0 +1,37 @@
+services:
+  hub:
+    build: .
+    container_name: xeoma-hub
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "3000"
+    networks:
+      - xeoma-edge
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: xeoma-hub-caddy
+    restart: unless-stopped
+    depends_on:
+      - hub
+    environment:
+      HUB_DOMAIN: ${HUB_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - xeoma-edge
+
+networks:
+  xeoma-edge:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -4,6 +4,8 @@ Xeoma Hub is a secure control-plane dashboard for viewing multiple Xeoma deploym
 
 > **Current state:** the application runs in demo mode by default. Follow this guide to connect three sites with static public IPs and one site with a dynamic public IP.
 
+> **Self-hosting on your static-IP machine:** follow [SELF_HOST_STATIC_IP.md](SELF_HOST_STATIC_IP.md) for the Docker Compose + Caddy deployment that publishes the Hub over HTTPS without exposing port 3000.
+
 ## 1. Recommended architecture
 
 Use the hub as a **control plane**, not as a video recorder or a raw RTSP proxy:
