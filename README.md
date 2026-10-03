@@ -168,14 +168,17 @@ It returns a small JSON response and is suitable for a container readiness check
 ## 6. Run locally
 
 ```bash
+cp .env.example .env   # optional; required for configured mode
 npm start
 # open http://localhost:3000
 ```
 
-Run the smoke tests:
+`npm start` and `npm run dev` load `.env` when that file exists (`--env-file-if-exists`) and still start if it is absent.
+
+Run the smoke tests (`npm test` sets `NODE_ENV=test` so the server does not bind a port at import time):
 
 ```bash
-NODE_ENV=test npm test
+npm test
 ```
 
 ## 7. Run with Docker
@@ -232,7 +235,7 @@ The first response should be `200`. The server response must not contain `passwo
 
 The dashboard UI and server-side configuration boundary are implemented. The exact server-side Xeoma discovery/snapshot/archive calls still depend on the Xeoma edition and API contract installed at your sites. Implement the provider methods in `src/server.js` against the API available in your environment, then add camera discovery and snapshot/archive routes.
 
-The app already supports configured `webViewUrl` links so the manager can open the native Xeoma browser view while the deeper adapter is being completed.
+Configured mode (`XEOMA_DEMO_MODE=false`) now exposes each server that has a `webViewUrl` as a camera-wall card and as an Open control on the server row. Those links open the native Xeoma browser view. Invalid `XEOMA_SERVERS_JSON` is reported as `configError` on `GET /api/meta` and as HTTP 500 on `/api/servers` and `/api/cameras`. Camera discovery, snapshots, and archive calls are still pending the licensed Xeoma API.
 
 ## 10. Security checklist
 

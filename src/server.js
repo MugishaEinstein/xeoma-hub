@@ -26,11 +26,65 @@ const demoCameras = [
   { id: 'back-door', serverId: 'retail-east', name: 'Back door', zone: 'Perimeter', state: 'offline', people: 0, updated: '8 min ago', accent: 'slate' }
 ];
 
-function configuredServers() {
+function webViewUrlOf(entry) {
+  return typeof entry?.webViewUrl === 'string' && entry.webViewUrl.trim() ? entry.webViewUrl.trim() : null;
+}
+
+function loadConfiguredServers() {
+  const rawEnv = process.env.XEOMA_SERVERS_JSON;
+  if (rawEnv == null || String(rawEnv).trim() === '') return { servers: [], configError: null };
+  let parsed;
   try {
-    const raw = JSON.parse(process.env.XEOMA_SERVERS_JSON || '[]');
-    return Array.isArray(raw) ? raw.map((s) => ({ ...s, status: 'configured', cameras: 0, lastSync: 'not synced' })) : [];
-  } catch { return []; }
+    parsed = JSON.parse(rawEnv);
+  } catch {
+    return { servers: [], configError: 'XEOMA_SERVERS_JSON is not valid JSON' };
+  }
+  if (!Array.isArray(parsed)) return { servers: [], configError: 'XEOMA_SERVERS_JSON must be a JSON array' };
+  if (parsed.some((entry) => !entry || typeof entry !== 'object' || Array.isArray(entry))) {
+    return { servers: [], configError: 'XEOMA_SERVERS_JSON entries must be objects' };
+  }
+  const servers = parsed.map((entry, index) => {
+    const webViewUrl = webViewUrlOf(entry);
+    return {
+      ...entry,
+      id: String(entry.id || `server-${index + 1}`),
+      name: String(entry.name || entry.id || `Server ${index + 1}`),
+      status: 'configured',
+      cameras: webViewUrl ? 1 : 0,
+      lastSync: 'not synced',
+      webViewUrl
+    };
+  });
+  return { servers, configError: null };
+}
+
+function configuredServers() {
+  const loaded = loadConfiguredServers();
+  if (loaded.configError) {
+    const error = new Error(loaded.configError);
+    error.code = 'XEOMA_CONFIG';
+    throw error;
+  }
+  return loaded.servers;
+}
+
+function publicServer(server) {
+  const { password, username, ...safe } = server;
+  return safe;
+}
+
+function configuredCameras(servers) {
+  return servers.filter((server) => server.webViewUrl).map((server) => ({
+    id: `${server.id}-webview`,
+    serverId: server.id,
+    name: server.name,
+    zone: server.location || 'Browser view',
+    state: 'live',
+    people: 0,
+    updated: 'configured',
+    accent: 'blue',
+    webViewUrl: server.webViewUrl
+  }));
 }
 
 function json(res, status, payload) {
@@ -52,9 +106,10 @@ async function serveStatic(req, res) {
   res.end(await readFile(file));
 }
 
-function cameraResponse(camera) {
-  const server = [...demoServers, ...configuredServers()].find((s) => s.id === camera.serverId);
-  return { ...camera, serverName: server?.name || camera.serverId, webViewUrl: server?.webViewUrl || null, streamConfigured: Boolean(server?.webViewUrl) };
+function cameraResponse(camera, servers) {
+  const server = servers.find((s) => s.id === camera.serverId);
+  const webViewUrl = camera.webViewUrl || server?.webViewUrl || null;
+  return { ...camera, serverName: server?.name || camera.serverId, webViewUrl, streamConfigured: Boolean(webViewUrl) };
 }
 
 function createXeomaProvider(server) {
@@ -66,17 +121,33 @@ function createXeomaProvider(server) {
   };
 }
 
+function configProblem(res, configError) {
+  return json(res, 500, { error: configError });
+}
+
 async function handleApi(req, res, url) {
-  const servers = demoMode ? demoServers : configuredServers();
-  if (url.pathname === '/api/meta') return json(res, 200, { app: 'Xeoma Hub', demoMode, provider: demoMode ? 'demo' : 'xeoma-server-adapter', generatedAt: new Date().toISOString() });
-  if (url.pathname === '/api/servers') return json(res, 200, { servers: servers.map(({ password, username, ...safe }) => safe) });
+  const loaded = demoMode ? { servers: demoServers, configError: null } : loadConfiguredServers();
+  const lookupServers = demoMode ? [...demoServers, ...loadConfiguredServers().servers] : loaded.servers;
+  const configuredRequest = !demoMode && (url.pathname === '/api/servers' || url.pathname === '/api/cameras' || url.pathname.startsWith('/api/servers/'));
+  if (loaded.configError && configuredRequest) return configProblem(res, loaded.configError);
+
+  if (url.pathname === '/api/meta') {
+    return json(res, 200, {
+      app: 'Xeoma Hub',
+      demoMode,
+      provider: demoMode ? 'demo' : 'xeoma-server-adapter',
+      generatedAt: new Date().toISOString(),
+      configError: loaded.configError
+    });
+  }
+  if (url.pathname === '/api/servers') return json(res, 200, { servers: loaded.servers.map(publicServer) });
   if (url.pathname === '/api/cameras') {
-    const cameras = demoMode ? demoCameras : [];
-    return json(res, 200, { cameras: cameras.map(cameraResponse) });
+    const cameras = demoMode ? demoCameras : configuredCameras(loaded.servers);
+    return json(res, 200, { cameras: cameras.map((camera) => cameraResponse(camera, lookupServers)) });
   }
   if (url.pathname.startsWith('/api/servers/') && url.pathname.endsWith('/health')) {
     const id = url.pathname.split('/')[3];
-    const server = servers.find((s) => s.id === id);
+    const server = loaded.servers.find((s) => s.id === id);
     return server ? json(res, 200, await (demoMode ? { id, status: server.status, reachable: true } : createXeomaProvider(server).health())) : json(res, 404, { error: 'Server not found' });
   }
   return json(res, 404, { error: 'API route not found' });
@@ -93,4 +164,4 @@ const server = http.createServer(async (req, res) => {
 
 if (process.env.NODE_ENV !== 'test') server.listen(PORT, HOST, () => console.log(`Xeoma Hub listening on http://${HOST}:${PORT} (${demoMode ? 'demo' : 'configured'} mode)`));
 
-export { server, demoServers, demoCameras, configuredServers, createXeomaProvider };
+export { server, demoServers, demoCameras, configuredServers, loadConfiguredServers, createXeomaProvider };
