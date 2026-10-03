@@ -137,7 +137,7 @@ Set demo mode off and configure one JSON record per site:
 PORT=3000
 HOST=0.0.0.0
 XEOMA_DEMO_MODE=false
-XEOMA_SERVERS_JSON=[{"id":"site-1","name":"Site 1","location":"Static IP site 1","host":"https://xeoma-site-1.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-1.example.com/view/REPLACE"},{"id":"site-2","name":"Site 2","location":"Static IP site 2","host":"https://xeoma-site-2.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-2.example.com/view/REPLACE"},{"id":"site-3","name":"Site 3","location":"Static IP site 3","host":"https://xeoma-site-3.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-3.example.com/view/REPLACE"},{"id":"site-4","name":"Site 4","location":"Dynamic IP site","host":"https://xeoma-site-4.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-4.example.com/view/REPLACE"}]
+XEOMA_SERVERS_JSON=[{"id":"site-1","name":"Site 1","network":"static","location":"Static IP site 1","host":"https://xeoma-site-1.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-1.example.com/view/REPLACE"},{"id":"site-2","name":"Site 2","network":"static","location":"Static IP site 2","host":"https://xeoma-site-2.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-2.example.com/view/REPLACE"},{"id":"site-3","name":"Site 3","network":"static","location":"Static IP site 3","host":"https://xeoma-site-3.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-3.example.com/view/REPLACE"},{"id":"site-4","name":"Site 4","network":"dynamic","location":"Dynamic IP site","host":"https://xeoma-site-4.example.com","username":"hub-viewer","password":"REPLACE_IN_SECRET_STORE","webViewUrl":"https://xeoma-site-4.example.com/view/REPLACE"}]
 ```
 
 Important:
@@ -147,6 +147,14 @@ Important:
 - Use a separate read-only Xeoma account for the hub, not an administrator account.
 - Keep the `host` and `webViewUrl` values on HTTPS stable hostnames, not raw dynamic IPs.
 - The current starter removes `username` and `password` from `/api/servers` responses before they reach the browser.
+
+### Stable hostnames and site health
+
+Set optional `network` to `"static"` or `"dynamic"` on each JSON record.
+
+- A dynamic site (`"network":"dynamic"`) is rejected when `host` or `webViewUrl` is a raw IPv4 or IPv6 address. `GET /api/meta` returns `configError`, and `/api/servers` and `/api/cameras` return HTTP 500 until you replace the IP with a tunnel or DDNS hostname such as `xeoma-site-4.example.com`.
+- A raw IP on a static site, or when `network` is omitted, still loads, but `configWarnings` on `GET /api/meta` and on that server tells you to prefer a stable hostname. Dynamic sites must use a tunnel or DDNS name, not the current public IP.
+- In configured mode, `GET /api/servers` and `GET /api/cameras` run a server-side HTTPS GET against each `host` (about 5 seconds, credentials never placed in the URL or logs). `status` becomes `online` (reachable HTTP 2xx), `attention` (slow 2xx or any non-2xx), or `offline` (timeout, DNS, or TLS failure). `GET /api/servers/:id/health` returns the same check. Demo mode does not probe the network.
 
 ### Managed hosting configuration
 
@@ -233,9 +241,9 @@ The first response should be `200`. The server response must not contain `passwo
 
 ## 9. Current integration boundary
 
-The dashboard UI and server-side configuration boundary are implemented. The exact server-side Xeoma discovery/snapshot/archive calls still depend on the Xeoma edition and API contract installed at your sites. Implement the provider methods in `src/server.js` against the API available in your environment, then add camera discovery and snapshot/archive routes.
+The dashboard UI, configuration boundary, and HTTPS reachability check are implemented. `createXeomaProvider.health()` probes `server.host` only. Camera discovery, snapshots, and archive calls still depend on the licensed Xeoma Web API or Pro JSON API installed at your sites.
 
-Configured mode (`XEOMA_DEMO_MODE=false`) now exposes each server that has a `webViewUrl` as a camera-wall card and as an Open control on the server row. Those links open the native Xeoma browser view. Invalid `XEOMA_SERVERS_JSON` is reported as `configError` on `GET /api/meta` and as HTTP 500 on `/api/servers` and `/api/cameras`. Camera discovery, snapshots, and archive calls are still pending the licensed Xeoma API.
+Configured mode (`XEOMA_DEMO_MODE=false`) exposes each server that has a `webViewUrl` as a camera-wall card and as an Open control on the server row. Those links open the native Xeoma browser view. Server and camera status follow the health probe (`online`, `attention`, or `offline`) instead of staying at `configured`. Invalid `XEOMA_SERVERS_JSON`, including a dynamic site configured with a raw IP, is reported as `configError` on `GET /api/meta` and as HTTP 500 on `/api/servers` and `/api/cameras`.
 
 ## 10. Security checklist
 

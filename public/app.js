@@ -43,7 +43,11 @@ function renderServers() {
     const open = server.webViewUrl
       ? `<button class="row-open" data-url="${escapeAttr(server.webViewUrl)}" title="Open Xeoma view">Open</button>`
       : '<button class="row-open" disabled title="No web view configured">Open</button>';
-    return `<div class="server-row"><span class="server-status ${server.status}"><i></i></span><div><strong>${server.name}</strong><small>${server.location || server.host}</small></div><span class="server-cameras">${server.cameras} cams</span><span class="latency">${server.latencyMs ? `${server.latencyMs} ms` : '—'}</span>${open}<button class="row-more">···</button></div>`;
+    const warning = Array.isArray(server.configWarnings) && server.configWarnings.length
+      ? `<small class="config-warning">${escapeText(server.configWarnings.join(' '))}</small>`
+      : '';
+    const detail = escapeText(server.location || server.host || '');
+    return `<div class="server-row"><span class="server-status ${escapeAttr(server.status)}"><i></i></span><div><strong>${escapeText(server.name)}</strong><small>${detail}</small>${warning}</div><span class="server-cameras">${server.cameras} cams</span><span class="latency">${Number.isFinite(server.latencyMs) ? `${server.latencyMs} ms` : '—'}</span>${open}<button class="row-more">···</button></div>`;
   }).join('');
   bindOpenButtons('.row-open:not([disabled])');
 }
