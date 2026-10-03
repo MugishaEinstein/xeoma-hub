@@ -5,11 +5,11 @@
   "description": "A secure control-plane dashboard for aggregating Xeoma servers and cameras.",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "node --test"
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "test": "NODE_ENV=test node --test"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.12"
   }
 }
