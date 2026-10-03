@@ -36,4 +36,20 @@ test('camera endpoint returns a camera wall payload', async () => {
   assert.ok(cameras.every((camera) => camera.serverName));
 });
 
+test('demo mode does not probe site health', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error('demo mode must not call fetch'); };
+  try {
+    const servers = JSON.parse((await request('/api/servers')).body).servers;
+    assert.deepEqual(servers.map((item) => item.status), ['online', 'online', 'attention']);
+    const health = JSON.parse((await request('/api/servers/north-campus/health')).body);
+    assert.equal(health.status, 'online');
+    assert.equal(health.reachable, true);
+    const meta = JSON.parse((await request('/api/meta')).body);
+    assert.equal(Object.hasOwn(meta, 'configWarnings'), false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test.after(() => server.close());

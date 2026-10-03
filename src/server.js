@@ -30,19 +30,109 @@ function webViewUrlOf(entry) {
   return typeof entry?.webViewUrl === 'string' && entry.webViewUrl.trim() ? entry.webViewUrl.trim() : null;
 }
 
+const HEALTH_TIMEOUT_MS = 5000;
+const HEALTH_SLOW_MS = 2000;
+const DYNAMIC_IP_HINT = 'Use a stable tunnel or DDNS hostname instead of a raw IP.';
+const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+const IPV4_RE = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}$`);
+
+function isRawIpAddress(hostname) {
+  if (typeof hostname !== 'string') return false;
+  let bare = hostname.trim().toLowerCase();
+  if (bare.startsWith('[') && bare.endsWith(']')) bare = bare.slice(1, -1);
+  if (IPV4_RE.test(bare)) return true;
+  const mapped = bare.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped && IPV4_RE.test(mapped[1])) return true;
+  if (!bare.includes(':') || !/^[0-9a-f:]+$/.test(bare)) return false;
+  const compressed = bare.includes('::');
+  if (compressed && bare.indexOf('::') !== bare.lastIndexOf('::')) return false;
+  const parts = bare.split(':');
+  if (!compressed && parts.length !== 8) return false;
+  if (compressed && (parts.length < 3 || parts.length > 8)) return false;
+  return parts.every((part) => part === '' || /^[0-9a-f]{1,4}$/.test(part));
+}
+
+function endpointUrl(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  let candidate = trimmed;
+  if (!hasScheme) {
+    if (trimmed.startsWith('[')) candidate = `https://${trimmed}`;
+    else if (trimmed.includes(':') && !/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(trimmed)) candidate = `https://[${trimmed}]`;
+    else candidate = `https://${trimmed}`;
+  }
+  try {
+    return new URL(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function endpointHostname(value) {
+  const url = endpointUrl(value);
+  if (!url) return null;
+  let hostname = url.hostname;
+  if (hostname.startsWith('[') && hostname.endsWith(']')) hostname = hostname.slice(1, -1);
+  return hostname.toLowerCase();
+}
+
+function withoutUserinfo(value) {
+  if (typeof value !== 'string') return value ?? null;
+  if (!value.includes('://')) return value;
+  try {
+    const url = new URL(value.trim());
+    if (!url.username && !url.password) return value;
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    return value.replace(/\/\/(?:[^/@\s]+)@/g, '//');
+  }
+}
+
+function hostnameIssues(entry) {
+  const errors = [];
+  const warnings = [];
+  const label = String(entry?.name || entry?.id || 'server');
+  const network = entry?.network;
+  if (network != null && network !== 'static' && network !== 'dynamic') {
+    errors.push(`Server "${label}" has invalid network "${String(network)}". Use "static" or "dynamic".`);
+  }
+  for (const field of ['host', 'webViewUrl']) {
+    const value = entry?.[field];
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const hostname = endpointHostname(value);
+    if (!hostname || !isRawIpAddress(hostname)) continue;
+    const detail = `Server "${label}" ${field} is a raw IP address (${hostname}). ${DYNAMIC_IP_HINT}`;
+    if (network === 'dynamic') errors.push(detail);
+    else warnings.push(detail);
+  }
+  return { errors, warnings };
+}
+
+function emptyConfig(configError = null) {
+  return { servers: [], configError, configWarnings: [] };
+}
+
 function loadConfiguredServers() {
   const rawEnv = process.env.XEOMA_SERVERS_JSON;
-  if (rawEnv == null || String(rawEnv).trim() === '') return { servers: [], configError: null };
+  if (rawEnv == null || String(rawEnv).trim() === '') return emptyConfig();
   let parsed;
   try {
     parsed = JSON.parse(rawEnv);
   } catch {
-    return { servers: [], configError: 'XEOMA_SERVERS_JSON is not valid JSON' };
+    return emptyConfig('XEOMA_SERVERS_JSON is not valid JSON');
   }
-  if (!Array.isArray(parsed)) return { servers: [], configError: 'XEOMA_SERVERS_JSON must be a JSON array' };
+  if (!Array.isArray(parsed)) return emptyConfig('XEOMA_SERVERS_JSON must be a JSON array');
   if (parsed.some((entry) => !entry || typeof entry !== 'object' || Array.isArray(entry))) {
-    return { servers: [], configError: 'XEOMA_SERVERS_JSON entries must be objects' };
+    return emptyConfig('XEOMA_SERVERS_JSON entries must be objects');
   }
+  const issues = parsed.map((entry) => hostnameIssues(entry));
+  const errors = issues.flatMap((issue) => issue.errors);
+  if (errors.length) return emptyConfig(errors.join(' '));
+  const configWarnings = issues.flatMap((issue) => issue.warnings);
   const servers = parsed.map((entry, index) => {
     const webViewUrl = webViewUrlOf(entry);
     return {
@@ -52,10 +142,11 @@ function loadConfiguredServers() {
       status: 'configured',
       cameras: webViewUrl ? 1 : 0,
       lastSync: 'not synced',
-      webViewUrl
+      webViewUrl,
+      configWarnings: issues[index].warnings
     };
   });
-  return { servers, configError: null };
+  return { servers, configError: null, configWarnings };
 }
 
 function configuredServers() {
@@ -70,7 +161,15 @@ function configuredServers() {
 
 function publicServer(server) {
   const { password, username, ...safe } = server;
+  if (typeof safe.host === 'string') safe.host = withoutUserinfo(safe.host);
+  if (typeof safe.webViewUrl === 'string') safe.webViewUrl = withoutUserinfo(safe.webViewUrl);
   return safe;
+}
+
+function configuredCameraState(server) {
+  if (server.status === 'offline') return 'offline';
+  if (server.status === 'attention') return 'attention';
+  return 'live';
 }
 
 function configuredCameras(servers) {
@@ -79,9 +178,9 @@ function configuredCameras(servers) {
     serverId: server.id,
     name: server.name,
     zone: server.location || 'Browser view',
-    state: 'live',
+    state: configuredCameraState(server),
     people: 0,
-    updated: 'configured',
+    updated: server.status === 'online' ? 'reachable' : (server.status || 'configured'),
     accent: 'blue',
     webViewUrl: server.webViewUrl
   }));
@@ -109,16 +208,92 @@ async function serveStatic(req, res) {
 function cameraResponse(camera, servers) {
   const server = servers.find((s) => s.id === camera.serverId);
   const webViewUrl = camera.webViewUrl || server?.webViewUrl || null;
-  return { ...camera, serverName: server?.name || camera.serverId, webViewUrl, streamConfigured: Boolean(webViewUrl) };
+  return { ...camera, serverName: server?.name || camera.serverId, webViewUrl: withoutUserinfo(webViewUrl), streamConfigured: Boolean(webViewUrl) };
 }
 
-function createXeomaProvider(server) {
+function createXeomaProvider(server, options = {}) {
   // The installed Xeoma edition determines whether this uses Web API or Pro JSON API.
-  // Keep the integration server-side: never send server.password to the browser.
+  // Health is a credential-free HTTPS GET of server.host. Never log or embed username/password.
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : HEALTH_TIMEOUT_MS;
+  const slowMs = Number.isFinite(options.slowMs) ? options.slowMs : HEALTH_SLOW_MS;
   return {
-    async health() { return { id: server.id, status: 'configured', host: server.host, reachable: null, message: 'Provider adapter pending licensed Xeoma API mapping' }; },
+    async health() {
+      const id = server?.id;
+      const started = Date.now();
+      const base = { id, host: null, reachable: false, latencyMs: null, httpStatus: null };
+      const rawHost = typeof server?.host === 'string' ? server.host.trim() : '';
+      if (!rawHost) return { ...base, status: 'offline', message: 'No host configured' };
+      const url = endpointUrl(rawHost);
+      if (!url) return { ...base, status: 'offline', message: 'Host is not a valid URL' };
+      url.username = '';
+      url.password = '';
+      url.hash = '';
+      const safeHost = url.origin;
+      if (url.protocol !== 'https:') {
+        return { ...base, host: safeHost, status: 'attention', reachable: false, message: 'Health check requires an https:// host' };
+      }
+      if (typeof fetchImpl !== 'function') {
+        return { ...base, host: safeHost, status: 'offline', message: 'Health check unavailable' };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetchImpl(url.toString(), { method: 'GET', redirect: 'manual', signal: controller.signal });
+        const latencyMs = Date.now() - started;
+        const httpStatus = response.status;
+        try { await response.body?.cancel?.(); } catch { /* ignore unread health body */ }
+        if (httpStatus >= 200 && httpStatus < 300) {
+          if (latencyMs >= slowMs) {
+            return { ...base, host: safeHost, status: 'attention', reachable: true, latencyMs, httpStatus, message: 'Slow response' };
+          }
+          return { ...base, host: safeHost, status: 'online', reachable: true, latencyMs, httpStatus, message: 'Reachable' };
+        }
+        return { ...base, host: safeHost, status: 'attention', reachable: true, latencyMs, httpStatus, message: `HTTP ${httpStatus}` };
+      } catch (error) {
+        const name = error && typeof error === 'object' ? error.name : '';
+        const timedOut = name === 'AbortError' || name === 'TimeoutError';
+        return {
+          ...base,
+          host: safeHost,
+          status: 'offline',
+          reachable: false,
+          latencyMs: Date.now() - started,
+          message: timedOut ? 'Health check timed out' : 'Unreachable (network or TLS)'
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     async snapshot(cameraId) { return { cameraId, supported: false, message: 'Implement with Xeoma Web API snapshot endpoint for this deployment.' }; }
   };
+}
+
+const healthInflight = new Map();
+
+function healthFor(server) {
+  const safeHost = withoutUserinfo(typeof server?.host === 'string' ? server.host : '') || '';
+  const key = `${server?.id || ''}\n${safeHost}`;
+  let pending = healthInflight.get(key);
+  if (!pending) {
+    pending = createXeomaProvider(server).health().finally(() => {
+      if (healthInflight.get(key) === pending) healthInflight.delete(key);
+    });
+    healthInflight.set(key, pending);
+  }
+  return pending;
+}
+
+async function applyHealth(servers) {
+  return Promise.all(servers.map(async (server) => {
+    const health = await healthFor(server);
+    return {
+      ...server,
+      status: health.status,
+      latencyMs: health.latencyMs,
+      lastSync: health.reachable ? 'just now' : 'unreachable'
+    };
+  }));
 }
 
 function configProblem(res, configError) {
@@ -132,23 +307,31 @@ async function handleApi(req, res, url) {
   if (loaded.configError && configuredRequest) return configProblem(res, loaded.configError);
 
   if (url.pathname === '/api/meta') {
-    return json(res, 200, {
+    const payload = {
       app: 'Xeoma Hub',
       demoMode,
       provider: demoMode ? 'demo' : 'xeoma-server-adapter',
       generatedAt: new Date().toISOString(),
       configError: loaded.configError
-    });
+    };
+    if (!demoMode) payload.configWarnings = loaded.configWarnings || [];
+    return json(res, 200, payload);
   }
-  if (url.pathname === '/api/servers') return json(res, 200, { servers: loaded.servers.map(publicServer) });
+  if (url.pathname === '/api/servers') {
+    const servers = demoMode ? loaded.servers : await applyHealth(loaded.servers);
+    return json(res, 200, { servers: servers.map(publicServer) });
+  }
   if (url.pathname === '/api/cameras') {
-    const cameras = demoMode ? demoCameras : configuredCameras(loaded.servers);
-    return json(res, 200, { cameras: cameras.map((camera) => cameraResponse(camera, lookupServers)) });
+    if (demoMode) return json(res, 200, { cameras: demoCameras.map((camera) => cameraResponse(camera, lookupServers)) });
+    const servers = await applyHealth(loaded.servers);
+    return json(res, 200, { cameras: configuredCameras(servers).map((camera) => cameraResponse(camera, servers)) });
   }
   if (url.pathname.startsWith('/api/servers/') && url.pathname.endsWith('/health')) {
     const id = url.pathname.split('/')[3];
     const server = loaded.servers.find((s) => s.id === id);
-    return server ? json(res, 200, await (demoMode ? { id, status: server.status, reachable: true } : createXeomaProvider(server).health())) : json(res, 404, { error: 'Server not found' });
+    if (!server) return json(res, 404, { error: 'Server not found' });
+    if (demoMode) return json(res, 200, { id, status: server.status, reachable: true });
+    return json(res, 200, await healthFor(server));
   }
   return json(res, 404, { error: 'API route not found' });
 }
@@ -164,4 +347,4 @@ const server = http.createServer(async (req, res) => {
 
 if (process.env.NODE_ENV !== 'test') server.listen(PORT, HOST, () => console.log(`Xeoma Hub listening on http://${HOST}:${PORT} (${demoMode ? 'demo' : 'configured'} mode)`));
 
-export { server, demoServers, demoCameras, configuredServers, loadConfiguredServers, createXeomaProvider };
+export { server, demoServers, demoCameras, configuredServers, loadConfiguredServers, createXeomaProvider, isRawIpAddress, endpointHostname };
